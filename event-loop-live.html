@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Event Loop Live</title>
+<style>
+  :root{
+    --bg:#0e1117; --card:#161b26; --line:#2a3142; --text:#e6e9f0; --mut:#8b93a7;
+    --sync:#4aa3ff; --micro:#3ddc97; --task:#ffb84a; --raf:#b48cff; --bad:#ff5d6c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:30px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--mut);margin:0 0 24px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:20px}
+  h2{margin:0 0 4px;font-size:20px}
+  p.d{color:var(--mut);margin:0 0 14px;font-size:14px}
+  textarea{width:100%;background:#0b0e14;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:12px;
+    font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;resize:vertical;margin-bottom:12px}
+  button{background:#232a3b;color:var(--text);border:1px solid #3a4360;border-radius:10px;padding:10px 16px;font-size:14px;cursor:pointer}
+  button:hover{background:#2b3348}
+  button:disabled{opacity:.5;cursor:default}
+  button.primary{background:#2f5bd8;border-color:#4a76f0}
+  button.primary:hover{background:#3a69ee}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;font-size:12px}
+  .pill{padding:3px 10px;border-radius:999px;border:1px solid currentColor}
+  .pill.sync{color:var(--sync)} .pill.micro{color:var(--micro)} .pill.task{color:var(--task)} .pill.raf{color:var(--raf)}
+  #list{display:flex;flex-direction:column;gap:8px;margin-top:14px;min-height:20px}
+  .chip{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;background:#0f1420;
+    border:1px solid var(--line);border-left:6px solid var(--c);animation:pop .35s ease both}
+  .chip.sync{--c:var(--sync)} .chip.micro{--c:var(--micro)} .chip.task{--c:var(--task)} .chip.raf{--c:var(--raf)}
+  .chip .n{width:26px;height:26px;border-radius:50%;background:var(--c);color:#0b0e14;font-weight:700;font-size:13px;
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .chip .l{flex:1;font:14px ui-monospace,Menlo,Consolas,monospace}
+  .chip .tag{font-size:12px;color:var(--c)}
+  .chip .ms{font-size:12px;color:var(--mut);min-width:64px;text-align:right}
+  @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .why{margin-top:14px;font-size:14px;color:var(--mut)}
+  .why b{color:var(--text)}
+  .stage{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:12px}
+  #ring{width:64px;height:64px;border-radius:50%;border:7px solid #2a3142;border-top-color:var(--micro);flex:none}
+  .stat{font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--mut)}
+  .stat b{color:var(--text);font-size:20px}
+  .stat .bad{color:var(--bad)}
+  canvas{width:100%;height:90px;background:#0b0e14;border:1px solid var(--line);border-radius:10px;display:block;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .grid button{text-align:left;line-height:1.35}
+  .grid button small{display:block;color:var(--mut);font-size:12px;margin-top:2px}
+  input[type=text]{width:100%;background:#0b0e14;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px}
+  #status{font-size:14px;color:var(--task);min-height:21px;margin:8px 0 0}
+  ul{margin:8px 0 0;padding-left:20px;color:var(--mut);font-size:14px}
+  li{margin:4px 0} li b{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Event Loop Live</h1>
+  <p class="sub">Real code, real browser. Nothing here is faked: the order you see is the order the browser ran things.</p>
+
+  <section>
+    <h2>1. What order does it run in?</h2>
+    <p class="d">Edit the code if you like, then press Run. Each line is logged in the order it actually executed, then replayed step by step.</p>
+    <div class="legend">
+      <span class="pill sync">sync = call stack</span>
+      <span class="pill micro">microtask</span>
+      <span class="pill task">task (timer, click, network)</span>
+      <span class="pill raf">before paint (rAF)</span>
+    </div>
+    <textarea id="code" rows="7" spellcheck="false">log('sync', 'sync start');
+setTimeout(() => log('task', 'setTimeout 0ms'), 0);
+requestAnimationFrame(() => log('raf', 'requestAnimationFrame'));
+Promise.resolve().then(() => log('micro', 'promise.then'));
+queueMicrotask(() => log('micro', 'queueMicrotask'));
+log('sync', 'sync end');</textarea>
+    <button id="run" class="primary">Run</button>
+    <div id="list"></div>
+    <p class="why"><b>Why?</b> The whole script is one task, so both sync lines finish first. When the stack empties, the browser drains <b>every microtask</b> before anything else. Then the loop moves on: a frame may be painted (rAF runs just before that) and timer tasks run on a later turn. rAF and the 0ms timer can swap places between runs, which is the point: tasks and frames are scheduled by the browser, microtasks are not.</p>
+  </section>
+
+  <section>
+    <h2>2. Block the main thread</h2>
+    <p class="d">The ring is moved by JavaScript on every frame, so it only moves when the main thread is free. Each bar is one frame; green is smooth, red is jank.</p>
+    <div class="stage">
+      <div id="ring"></div>
+      <div class="stat">fps<br><b id="fps">60</b></div>
+      <div class="stat">worst frame<br><b id="worst">0</b> ms</div>
+    </div>
+    <canvas id="graph" width="900" height="90"></canvas>
+    <div class="grid">
+      <button id="b1">Block with a loop (2s)<small>One long task. Ring freezes, typing stalls.</small></button>
+      <button id="b2">Same work in slices (2s)<small>Tiny tasks with gaps. Ring keeps moving.</small></button>
+      <button id="b3">Starve with microtasks (2s)<small>Microtasks never let the loop reach rendering.</small></button>
+      <button id="b4">Chain of setTimeouts (2s)<small>Each turn of the loop can render in between.</small></button>
+    </div>
+    <input type="text" placeholder="Try typing here while a button is running">
+    <p id="status"></p>
+    <p class="why"><b>Why?</b> Rendering, input and your JavaScript share one main thread. The loop can only paint or handle a click between tasks, so one long task, or a microtask that keeps queueing microtasks, makes the page feel frozen even though nothing crashed.</p>
+  </section>
+
+  <section>
+    <h2>3. Where this meets Angular</h2>
+    <ul>
+      <li><b>zone.js</b> patches <code>setTimeout</code>, <code>Promise</code> and event listeners. When a task and its microtasks finish, it tells Angular to run change detection, which is why DOM updates appear without you asking.</li>
+      <li><b>Change detection is just JavaScript on the main thread.</b> A slow template expression or a huge list adds to the long tasks you saw above.</li>
+      <li><b>OnPush and signals</b> shrink the work per check, so the gap between a click and the next paint stays under about 16ms.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------- Part 1: real order, replayed ---------- */
+const TAGS = { sync:'call stack', micro:'microtask', task:'task', raf:'before paint' };
+
+$('#run').onclick = () => {
+  const items = [];
+  const t0 = performance.now();
+  const log = (type, label) => items.push({ type, label, ms: performance.now() - t0 });
+  try { new Function('log', $('#code').value)(log); }
+  catch (e) { alert(e.message); return; }
+  $('#run').disabled = true;
+  $('#list').textContent = '';
+  setTimeout(() => replay(items), 250);   // let timers and the next frame fire first
+};
+
+function replay(items) {
+  if (!items.length) { $('#run').disabled = false; return; }
+  items.forEach((it, i) => setTimeout(() => {
+    const type = TAGS[it.type] ? it.type : 'sync';
+    const d = document.createElement('div');
+    d.className = 'chip ' + type;
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = i + 1;
+    const l = document.createElement('span'); l.className = 'l'; l.textContent = it.label;
+    const tg = document.createElement('span'); tg.className = 'tag'; tg.textContent = TAGS[type];
+    const ms = document.createElement('span'); ms.className = 'ms'; ms.textContent = '+' + it.ms.toFixed(1) + ' ms';
+    d.append(n, l, tg, ms);
+    $('#list').appendChild(d);
+    if (i === items.length - 1) $('#run').disabled = false;
+  }, i * 450));
+}
+
+/* ---------- Part 2: frame graph + jank demos ---------- */
+const ring = $('#ring'), cv = $('#graph'), ctx = cv.getContext('2d');
+const frames = [];
+let angle = 0, last = performance.now();
+
+function draw() {
+  const W = cv.width, H = cv.height, N = 150, bw = W / N, MAX = 120;
+  ctx.clearRect(0, 0, W, H);
+  frames.forEach((dt, i) => {
+    const h = Math.max(2, Math.min(dt, MAX) / MAX * H);
+    ctx.fillStyle = dt <= 20 ? '#3ddc97' : dt <= 50 ? '#ffb84a' : '#ff5d6c';
+    ctx.fillRect(i * bw, H - h, bw - 1, h);
+  });
+  const y = H - 16.7 / MAX * H;
+  ctx.strokeStyle = '#8b93a7'; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = '#8b93a7'; ctx.font = '11px system-ui';
+  ctx.fillText('16.7ms (60fps)', 6, y - 4);
+}
+
+function frame(now) {
+  const dt = now - last; last = now;
+  angle = (angle + dt * 0.36) % 360;
+  ring.style.transform = 'rotate(' + angle + 'deg)';
+  frames.push(dt); if (frames.length > 150) frames.shift();
+  const recent = frames.slice(-20);
+  const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  $('#fps').textContent = Math.round(1000 / avg);
+  const worst = Math.max(...frames);
+  const w = $('#worst'); w.textContent = Math.round(worst); w.className = worst > 50 ? 'bad' : '';
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+const busy = ms => { const e = performance.now() + ms; while (performance.now() < e) {} };
+const status = t => { $('#status').textContent = t; };
+function setBusy(on) { document.querySelectorAll('.grid button').forEach(b => b.disabled = on); }
+function start(msg, fn) {
+  setBusy(true); status(msg);
+  setTimeout(fn, 60);                      // give the status text a chance to paint first
+}
+function finish() { setBusy(false); status('Done. Check the graph.'); }
+
+$('#b1').onclick = () => start('Blocking the main thread with one long loop...', () => { busy(2000); finish(); });
+
+$('#b2').onclick = () => start('Working in 6ms slices, yielding between each...', () => {
+  const end = performance.now() + 2000;
+  (function step() {
+    busy(6);
+    if (performance.now() < end) setTimeout(step, 0); else finish();
+  })();
+});
+
+$('#b3').onclick = () => start('Queueing microtasks from microtasks. No paint until this ends...', () => {
+  const end = performance.now() + 2000;
+  (function f() {
+    if (performance.now() < end) queueMicrotask(f); else finish();
+  })();
+});
+
+$('#b4').onclick = () => start('Chaining setTimeout. Each turn of the loop can paint...', () => {
+  const end = performance.now() + 2000;
+  (function g() {
+    if (performance.now() < end) setTimeout(g, 0); else finish();
+  })();
+});
+</script>
+</body>
+</html>

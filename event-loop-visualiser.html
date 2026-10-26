@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Event Loop Visualiser</title>
+<style>
+  :root{
+    --bg:#fafaf5; --ink:#1d2430; --mut:#6b7585; --line:#cfd6e0; --blue:#2b6cb0; --hl:#dff0ff;
+    --call:#f4d03f; --cb:#7fc8f8; --micro:#8fe0a8; --bad:#e5484d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  .top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+  .top h1{font-size:20px;margin:0 12px 0 0}
+  select,button{font:inherit;font-size:14px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+  button{cursor:pointer}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  label.chk{font-size:14px;color:var(--mut);display:flex;align-items:center;gap:6px}
+  #narr{background:#fff;border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:10px;
+    padding:12px 16px;min-height:60px;margin-bottom:14px;font-size:17px}
+  .board{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.board{grid-template-columns:1fr}}
+  .col{display:flex;flex-direction:column;gap:14px}
+  .zone{border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 12px;display:flex;flex-direction:column}
+  .zlabel{font-weight:600;font-size:15px;color:var(--mut);text-align:center;margin-bottom:8px}
+  .zlabel.l{text-align:left}
+  .eli{display:none;font-weight:500;color:#0f8a6a}
+  body.eli16 .eli{display:inline}
+  .eli-block{display:none;margin-top:16px;background:#fff;border:1px solid var(--line);border-left:6px solid #0f8a6a;border-radius:12px;padding:14px 16px}
+  body.eli16 .eli-block{display:block}
+  .eli-block h2{font-size:17px;margin:0 0 4px}
+  .eli-block .sub{font-size:13px;color:var(--mut);margin:0 0 10px}
+  .eli-block ul{list-style:none;margin:0;padding:0}
+  .eli-block li{padding:9px 0;border-top:1px solid #eef1f5;font-size:15px}
+  .eli-block li:first-child{border-top:0}
+  .eli-block code{font:600 14px ui-monospace,Menlo,Consolas,monospace;color:#0f8a6a}
+  .eli-block a{font-size:13px;color:var(--blue);margin-left:6px;white-space:nowrap}
+  body.eli16 #narr{border-left-color:#0f8a6a}
+  #code{border:2px solid var(--blue);padding:10px 0;min-height:250px;overflow-x:auto}
+  .ln{font:15px/1.7 ui-monospace,Menlo,Consolas,monospace;white-space:pre;padding:0 14px;border-left:4px solid transparent}
+  .ln.on{background:var(--hl);border-left-color:var(--blue)}
+  .k{color:#8a3ffc}.s{color:#4a8a14}.n{color:#d9730d}.f{color:#2b6cb0}
+  #consoleBody{min-height:140px;font:15px/1.7 ui-monospace,Menlo,Consolas,monospace}
+  #consoleBody div{animation:pop .3s ease both}
+  .pair{display:grid;grid-template-columns:1fr 1.2fr;gap:12px;margin-top:8px}
+  .pair .zone{height:330px;position:relative}
+  .pair .zone.js{border:2px solid var(--blue)}
+  .pair .zone.outside{border:3px dashed #8a3ffc;background:#faf6ff}
+  .tag{position:absolute;top:-13px;left:12px;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap}
+  .tag.js{background:var(--blue)}
+  .tag.out{background:#8a3ffc}
+  .zbody{flex:1;display:flex;gap:8px}
+  #stack{flex-direction:column-reverse}
+  #webapis{flex-direction:column;overflow:auto}
+  .row .zbody{flex-direction:row;flex-wrap:wrap;align-content:flex-start;min-height:48px}
+  .blk{padding:10px 12px;border-radius:8px;font:600 14px ui-monospace,Menlo,Consolas,monospace;
+    background:var(--call);border:1px solid rgba(0,0,0,.12);text-align:center;animation:pop .3s ease both}
+  .blk.cb{background:var(--cb)}
+  .blk.micro{background:var(--micro)}
+  .blk.hot{background:repeating-linear-gradient(45deg,#f6a8a8,#f6a8a8 10px,#f9c5c5 10px,#f9c5c5 20px);background-size:200% 100%;animation:slide 1s linear infinite}
+  .row .blk{min-width:90px}
+  .timer{border:1px dashed #b8a24a;border-radius:10px;padding:6px 8px;background:#fffbe6;display:flex;flex-direction:row;align-items:center;gap:8px;flex:none;animation:pop .3s ease both}
+  .tinfo{flex:1;display:flex;flex-direction:column;gap:5px;min-width:0}
+  .tl{font-size:12px;color:#7a6a1c}
+  .track{height:8px;border-radius:4px;background:#efe6b5;overflow:hidden}
+  .track i{display:block;height:100%;width:0;background:#d4a017}
+  .loop{display:flex;align-items:center;gap:14px;padding:4px 8px}
+  .loop .t{font-weight:600}
+  .loop .st{font-size:13px;color:var(--mut)}
+  #spin{width:44px;height:44px;flex:none;animation:spin 1.6s linear infinite}
+  #spin.waiting{animation-duration:4s;opacity:.6}
+  #spin.idle{animation:none;opacity:.35}
+  #spin.blocked{animation-play-state:paused;color:var(--bad)}
+  #spin{color:#3b4656}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes pop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+  @keyframes slide{to{background-position:-100% 0}}
+  .hint{color:var(--mut);font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Event Loop Visualiser</h1>
+    <select id="scn" aria-label="Scenario"></select>
+    <button id="run" class="primary">Run</button>
+    <button id="next" disabled>Next &rarr;</button>
+    <label class="chk"><input type="checkbox" id="auto" checked> Auto-play</label>
+    <label class="chk"><input type="checkbox" id="eli"> Explain like I'm 16</label>
+    <select id="spd" aria-label="Speed">
+      <option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option>
+    </select>
+  </div>
+
+  <div id="narr">Pick a scenario and press Run. Turn off Auto-play to step through with Next (or the right arrow / space key).</div>
+
+  <div class="board">
+    <div class="col">
+      <div class="zone" id="code"></div>
+      <div class="zone"><div class="zlabel l">Console<span class="eli"> (where console.log shows up)</span></div><div id="consoleBody"></div></div>
+    </div>
+    <div class="col">
+      <div class="pair">
+        <div class="zone js"><span class="tag js">JS thread</span><div class="zlabel">Call stack<span class="eli"> (what's running right now)</span></div><div class="zbody" id="stack"></div></div>
+        <div class="zone outside"><span class="tag out">Outside the JS thread</span><div class="zlabel">Web APIs<span class="eli"> (waiting room ⏱️)</span></div><div class="zbody" id="webapis"></div></div>
+      </div>
+      <div class="loop">
+        <svg id="spin" class="idle" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round">
+          <path d="M38 22a16 16 0 1 1-6-12.5"/><path d="M33 3v8h-8" stroke-linejoin="round"/>
+        </svg>
+        <div><div class="t">Event loop<span class="eli"> (the traffic cop)</span></div><div class="st" id="loopState">idle</div><div class="st">clock: <b id="clock">0</b> ms</div></div>
+      </div>
+      <div class="zone row"><div class="zlabel l">Microtask queue<span class="eli"> (higher-priority queue 🚨)</span></div><div class="zbody" id="microQ"></div></div>
+      <div class="zone row"><div class="zlabel l">Task queue<span class="eli"> (normal queue)</span></div><div class="zbody" id="taskQ"></div></div>
+    </div>
+  </div>
+  <p class="hint">Blue = the single JavaScript thread. Purple dashed ring = work the browser does on its own threads, so timers keep counting even while the stack is busy. This is a simulation: each scenario is a small script animated in the order a browser would run it, and timer durations are sped up.</p>
+
+  <div class="eli-block" id="microExamples">
+    <h2>Things that go in the microtask queue 🚨</h2>
+    <p class="sub">Each one is a small job that waits in the higher-priority line and runs as soon as the current code finishes.</p>
+    <ul>
+      <li><code>.then(() =&gt; {...})</code>: runs when a promise succeeds. Like a teacher saying "when your essay is marked, come see me".<a href="https://www.w3schools.com/js/js_promise.asp" target="_blank" rel="noopener">W3Schools: Promises</a></li>
+      <li><code>.catch(() =&gt; {...})</code>: runs when a promise fails. Your Plan B if something goes wrong.<a href="https://www.w3schools.com/js/js_promise.asp" target="_blank" rel="noopener">W3Schools: Promises</a></li>
+      <li><code>.finally(() =&gt; {...})</code>: runs whether it worked or failed. Tidying up at the end, no matter what happened.<a href="https://www.w3schools.com/js/js_promise.asp" target="_blank" rel="noopener">W3Schools: Promises</a></li>
+      <li><code>await</code> (inside <code>async function</code>): pauses this function until a promise is done. Everything after the <code>await</code> goes in the higher-priority line.<a href="https://www.w3schools.com/js/js_async.asp" target="_blank" rel="noopener">W3Schools: Async</a></li>
+      <li><code>queueMicrotask(() =&gt; {...})</code>: puts a small job straight into the higher-priority line, without making a promise first.<a href="https://developer.mozilla.org/en-US/docs/Web/API/queueMicrotask" target="_blank" rel="noopener">MDN: queueMicrotask</a></li>
+      <li><code>new MutationObserver(() =&gt; {...})</code>: a watcher. You tell the browser to watch part of the page, and when something changes (an element is added, removed or edited), your function goes in the higher-priority line. It's how code reacts to the page changing without checking all the time.<a href="https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver" target="_blank" rel="noopener">MDN: MutationObserver</a></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------- scenarios (tiny DSL) ---------- */
+const L = msg => ({ t:'log', msg });
+const T = (ms, body, name='cb') => ({ t:'timeout', ms, body, name });
+const P = (body, name='then') => ({ t:'promise', body, name });
+const B = ms => ({ t:'busy', ms });
+// K = click listener; `at` lists when (ms after registering) the user clicks
+const K = at => ({ t:'listen', at, name:'onClick', body:[{ t:'log', msg:'click ', dyn:true }] });
+
+const SCN = {
+  basics:  { title:'1. setTimeout basics',
+    list:[ L('Hi'), T(5000,[L('there')]), L('Bye') ] },
+  zero:    { title:'2. setTimeout 0 still waits',
+    list:[ L('A'), T(0,[L('C')]), L('B') ] },
+  promise: { title:'3. Promise beats setTimeout',
+    list:[ L('start'), T(0,[L('timeout')]), P([L('promise')]), L('end') ] },
+  between: { title:'4. Microtasks run between tasks',
+    list:[ T(0,[ P([L('A microtask')],'thenA'), L('A task') ],'cbA'), T(0,[L('B task')],'cbB') ] },
+  block:   { title:'5. Blocking the loop',
+    list:[ T(500,[L('timer (late!)')]), B(2000), L('done blocking') ] },
+  pileup:  { title:'6. Events pile up behind a busy stack',
+    list:[ T(100,[L('tick 1')],'tick1'), T(200,[L('tick 2')],'tick2'), T(300,[L('tick 3')],'tick3'), T(400,[L('tick 4')],'tick4'), B(2000), L('done blocking') ] },
+  late:    { title:'7. A 3s timer joins the back of a busy queue',
+    list:[ T(3000,[L('timer fired')],'timer'), K([1000,2000,2500,4000]), B(5000), L('script done') ] },
+  starve:  { title:'8. Starve the loop with microtasks',
+    list:[ T(0,[L('timer: my turn at last')],'timer'), { t:'starve', limit:5 } ] },
+  paint:   { title:'9. Practical: setTimeout 0 so the page can paint', showPaint:true,
+    list:[ L('render 1'), L('render 2'), T(0,[L('render 3')],'defer') ] },
+  quiz:    { title:'10. Audience quiz: guess the output', quiz:true,
+    question:'Before you press Next: in what order do 1, 2, 3 and 4 print? Take a guess out loud.',
+    questionSimple:'Quiz time! Before we start, guess the order the numbers print in. Press Next when you want to see the answer and the journey.',
+    list:[ L('1'), T(0,[L('2')],'two'), P([L('3')],'three'), L('4') ] }
+};
+
+/* ---------- code panel ---------- */
+let lines = [];
+function gen(list, indent) {
+  list.forEach(s => {
+    const pad = '  '.repeat(indent);
+    s.start = lines.length;
+    if (s.t === 'log') lines.push(pad + "console.log('" + s.msg + "');");
+    else if (s.t === 'busy') lines.push(pad + 'busyWait(' + s.ms + ');');
+    else if (s.t === 'timeout') { lines.push(pad + 'setTimeout(function ' + s.name + '() {'); gen(s.body, indent + 1); lines.push(pad + '}, ' + s.ms + ');'); }
+    else if (s.t === 'promise') { lines.push(pad + 'Promise.resolve().then(function ' + s.name + '() {'); gen(s.body, indent + 1); lines.push(pad + '});'); }
+    else if (s.t === 'listen') {
+      lines.push(pad + 'let clicks = 0;');
+      lines.push(pad + "button.addEventListener('click', function " + s.name + '() {');
+      s.hl = lines.length - 1;
+      s.body[0].start = s.body[0].end = lines.length;
+      lines.push(pad + "  console.log('click ' + ++clicks);");
+      lines.push(pad + '});');
+    }
+    else if (s.t === 'starve') {
+      lines.push(pad + 'let n = 0;');
+      s.fn = lines.length;
+      lines.push(pad + 'function loop() {');
+      lines.push(pad + "  console.log('microtask ' + ++n);");
+      lines.push(pad + '  Promise.resolve().then(loop);');
+      lines.push(pad + '}');
+      lines.push(pad + 'loop();');
+    }
+    s.end = lines.length - 1;
+  });
+}
+const esc = t => t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function colour(t) {
+  return esc(t)
+    .replace(/'[^']*'/g, m => '<span class="s">' + m + '</span>')
+    .replace(/\bfunction\b/g, '<span class="k">function</span>')
+    .replace(/\b(\d+)\b(?![^<]*<\/span>)/g, '<span class="n">$1</span>')
+    .replace(/\b(setTimeout|busyWait|console\.log|Promise\.resolve\(\)\.then)\b/g, '<span class="f">$1</span>');
+}
+function renderCode() {
+  const scn = SCN[$('#scn').value];
+  lines = []; gen(scn.list, 0);
+  const c = $('#code'); c.textContent = '';
+  lines.forEach(t => { const d = document.createElement('div'); d.className = 'ln'; d.innerHTML = colour(t) || ' '; c.appendChild(d); });
+}
+function highlight(a, b) {
+  document.querySelectorAll('#code .ln').forEach((d, i) => d.classList.toggle('on', a >= 0 && i >= a && i <= b));
+}
+
+/* ---------- DOM helpers ---------- */
+const stackZ = $('#stack'), webZ = $('#webapis'), microZ = $('#microQ'), taskZ = $('#taskQ'), conZ = $('#consoleBody');
+let speed = 1, runId = 0, nextResolve = null, running = false;
+const CANCEL = { cancel: true };
+const anim = (el, kf, opt) => el.animate(kf, opt).finished.catch(() => {});
+const dur = ms => ms / speed;
+const mk = (label, cls) => { const d = document.createElement('div'); d.className = 'blk ' + cls; d.textContent = label; return d; };
+let lastNarr = ['', ''];
+const eli = () => document.body.classList.contains('eli16');
+const narr = (t, s) => { lastNarr = [t, s]; $('#narr').textContent = (eli() && s) ? s : t; };
+const setLoop = s => { $('#spin').className.baseVal = s === 'running' ? '' : s; $('#loopState').textContent = ({
+  idle:'idle', running:'running JavaScript', waiting:'waiting for a timer', checking:'checking the queues', blocked:'BLOCKED: cannot render or handle input' })[s]; };
+async function moveTo(el, zone, ms = 500) {
+  const a = el.getBoundingClientRect();
+  zone.appendChild(el);
+  const b = el.getBoundingClientRect();
+  await anim(el, [{ transform: 'translate(' + (a.left - b.left) + 'px,' + (a.top - b.top) + 'px)' }, { transform: 'none' }],
+    { duration: dur(ms), easing: 'cubic-bezier(.3,.7,.3,1)' });
+}
+async function leave(el) {
+  await anim(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-16px)' }], { duration: dur(300) });
+  el.remove();
+}
+function resetBoard() {
+  [stackZ, webZ, microZ, taskZ, conZ].forEach(z => z.textContent = '');
+  highlight(-1, -1); setLoop('idle'); setNext(false); $('#clock').textContent = '0';
+}
+function setNext(on) { $('#next').disabled = !on; }
+function nextClick() { if (nextResolve) { const r = nextResolve; nextResolve = null; r(); } }
+
+/* ---------- the simulation ---------- */
+async function play() {
+  const my = ++runId;
+  nextClick();                       // release any older run so it can exit
+  resetBoard();
+  running = true; $('#run').textContent = 'Restart';
+  const scn = SCN[$('#scn').value];
+  let now = 0, seq = 0;
+  const timers = [], events = [], micro = [], tasks = [];
+  let starveN = 0, frozen = false, paintDue = false;
+
+  const chk = () => { if (my !== runId) throw CANCEL; };
+  const sleep = async ms => { await new Promise(r => setTimeout(r, ms / speed)); chk(); };
+  const gate = async (text, simple) => {
+    narr(text, simple);
+    if ($('#auto').checked && !scn.quiz) await sleep(1400);
+    else { setNext(true); await new Promise(r => { nextResolve = r; }); setNext(false); chk(); }
+  };
+  const push = async (label, cls) => { const b = mk(label, cls); stackZ.appendChild(b); await sleep(350); return b; };
+  const pop = async b => { await leave(b); chk(); };
+
+  // The browser only paints between tasks, once the stack and microtask queue are empty
+  async function paint() {
+    const d = document.createElement('div'); d.textContent = '🖼️ screen painted'; d.style.color = '#0f8a6a'; conZ.appendChild(d);
+    await gate('The browser gets a turn to paint. Render 1 and render 2 are on screen now. Without the setTimeout, this paint would wait until render 3 had finished too.',
+      'The browser gets to draw the screen now. Render 1 and render 2 show up. Without the setTimeout, the screen would wait for render 3 as well.');
+  }
+
+  function addTimer(s) {
+    const el = document.createElement('div'); el.className = 'timer';
+    const tl = document.createElement('div'); tl.className = 'tl'; tl.textContent = 'timer · ' + s.ms + ' ms';
+    const track = document.createElement('div'); track.className = 'track';
+    const bar = document.createElement('i'); track.appendChild(bar);
+    const cb = mk(s.name, 'cb');
+    const info = document.createElement('div'); info.className = 'tinfo'; info.append(tl, track);
+    el.append(info, cb); webZ.appendChild(el);
+    timers.push({ s, el, bar, cb, start: now, fireAt: now + s.ms, p: 0, seq: seq++ });
+  }
+
+  // move the clock forward, fill timer bars, and send due callbacks to the task queue
+  function tweenClock(a, b, ms) {
+    const t0 = performance.now();
+    (function f() {
+      if (my !== runId) return;
+      const k = ms <= 0 ? 1 : Math.min(1, (performance.now() - t0) / ms);
+      $('#clock').textContent = Math.round(a + (b - a) * k);
+      if (k < 1) requestAnimationFrame(f);
+    })();
+  }
+
+  // Move the clock forward to newNow. Timers and clicks that become due on the way are put
+  // at the BACK of the task queue, in the order they became ready.
+  async function advance(newNow) {
+    const total = Math.max(1, newNow - now);
+    const D = Math.min(2600, Math.max(600, total / 3));
+    const items = timers.filter(t => t.fireAt <= newNow).map(t => ({ fireAt: t.fireAt, seq: t.seq, t }))
+      .concat(events.filter(e => e.fireAt <= newNow).map(e => ({ fireAt: e.fireAt, seq: e.seq, e })))
+      .sort((a, b) => a.fireAt - b.fireAt || a.seq - b.seq);
+
+    async function runTo(target) {
+      const d = D * Math.max(0, target - now) / total;
+      const bars = timers.map(t => {
+        const p = t.s.ms === 0 ? 1 : Math.min(1, (target - t.start) / t.s.ms);
+        const prev = t.p; t.p = p; t.bar.style.width = (p * 100) + '%';
+        return anim(t.bar, [{ width: (prev * 100) + '%' }, { width: (p * 100) + '%' }], { duration: dur(d), easing: 'linear' });
+      });
+      tweenClock(now, target, dur(d));
+      await Promise.all(bars.concat([new Promise(r => setTimeout(r, dur(d)))]));
+      chk();
+      now = target;
+    }
+
+    for (const it of items) {
+      await runTo(it.fireAt);
+      if (it.t) {
+        timers.splice(timers.indexOf(it.t), 1);
+        await moveTo(it.t.cb, taskZ); chk();
+        tasks.push({ s: it.t.s, el: it.t.cb, due: it.fireAt });
+        leave(it.t.el);
+      } else {
+        events.splice(events.indexOf(it.e), 1);
+        const c = mk('click ' + it.e.n, 'cb'); taskZ.appendChild(c);
+        tasks.push({ s: it.e.s, el: c, due: it.fireAt, n: it.e.n });
+        await sleep(450);
+      }
+    }
+    await runTo(newNow);
+  }
+
+  async function exec(list, ctx) {
+    ctx = ctx || {};
+    for (const s of list) {
+      highlight(s.start, s.end);
+      if (s.t === 'log') {
+        const msg = s.dyn ? s.msg + ctx.n : s.msg;
+        const b = await push("console.log('" + msg + "')", 'call');
+        await gate('console.log is synchronous: it runs immediately and prints to the console.',
+          'console.log does its job right now and prints. Nothing waits and no queue is involved.');
+        const d = document.createElement('div'); d.textContent = msg; conZ.appendChild(d);
+        await pop(b);
+      } else if (s.t === 'listen') {
+        const b = await push("addEventListener('click')", 'call');
+        const when = s.at.map(a => (a / 1000) + 's').join(', ');
+        await gate('This registers a click handler. The browser watches for clicks outside the JS thread. Imagine the user clicking at ' + when + '. Each click becomes a task in the queue.',
+          'This tells the browser: "let me know when someone clicks". The browser watches for clicks for us. Imagine the user clicking at ' + when + '. Each click gets put in line.');
+        s.at.forEach((a, i) => events.push({ fireAt: now + a, seq: seq++, n: i + 1, s }));
+        await pop(b);
+      } else if (s.t === 'timeout') {
+        const b = await push('setTimeout(' + s.name + ', ' + s.ms + ')', 'call');
+        await gate('setTimeout is not part of the JavaScript language itself: the browser provides it (a Web API). It hands the callback and a timer to the browser and returns straight away.',
+          'You ask the browser: "tell me when ' + s.ms + ' ms have passed". The browser takes the timer and the function away to its waiting room. Your code carries on without waiting.');
+        addTimer(s);
+        await pop(b);
+      } else if (s.t === 'promise') {
+        const b = await push('.then(' + s.name + ')', 'call');
+        await gate('The promise is already resolved, so its callback goes into the microtask queue.',
+          'The promise is already done, so its callback goes in the VIP line (the microtask queue). It will run as soon as the current code finishes, before anything in the normal line.');
+        const c = mk(s.name, 'micro'); microZ.appendChild(c); micro.push({ s, el: c });
+        await pop(b);
+      } else if (s.t === 'starve') {
+        const b = await push('loop()', 'call');
+        await gate('loop() runs once normally: it logs, then queues ITSELF again as a microtask.',
+          'loop() runs once. It prints a line, then puts itself in the higher-priority queue again.');
+        starveN++;
+        const d = document.createElement('div'); d.textContent = 'microtask ' + starveN; conZ.appendChild(d);
+        const c = mk('loop()', 'micro'); microZ.appendChild(c); micro.push({ s, el: c });
+        await pop(b);
+        await gate('Meanwhile the 0 ms timer has expired. Its callback joins the task queue, but a task cannot run until the microtask queue is empty.',
+          'Meanwhile the 0 ms timer finished in the waiting room, so its function joins the normal queue. But the normal queue has to wait until the higher-priority queue is completely empty.');
+        await advance(now + 1);
+      } else if (s.t === 'busy') {
+        const b = await push('busyWait(' + s.ms + ')', 'call hot');
+        setLoop('blocked');
+        await gate('A long synchronous task. Nothing else can happen: no rendering, no clicks. The browser keeps counting timers outside the JS thread. When one expires, its callback does NOT jump in: it joins the back of the task queue, behind anything already waiting.',
+          'Your code is stuck doing a big job and nothing else can run. Meanwhile the browser keeps the timers going in the waiting room. When a timer ends, its function just joins the back of the normal line. It does not push in.');
+        await advance(now + s.ms);
+        setLoop('running');
+        await pop(b);
+      }
+    }
+    highlight(-1, -1);
+  }
+
+  try {
+    setLoop('running');
+    if (scn.quiz) { narr(scn.question, scn.questionSimple); setNext(true); await new Promise(r => { nextResolve = r; }); setNext(false); chk(); }
+    const main = await push('main()', 'call');
+    await gate('The script itself is the first task. main() goes on the call stack.',
+      'Your whole script is the first job. It goes on the call stack, which is the "what is running right now" box. Only one thing can be running at a time.');
+    await exec(scn.list);
+    await gate('The script has finished, so main() leaves the stack.',
+      'Your script is done, so the stack is empty. Now the traffic cop (the event loop) gets to decide what runs next.');
+    await pop(main);
+    paintDue = !!scn.showPaint;
+
+    setLoop('checking');
+    while (true) {
+      if (micro.length) {
+        const m = micro.shift();
+        if (m.s.t === 'starve') {
+          if (starveN >= m.s.limit) {
+            frozen = true;
+            setLoop('blocked'); highlight(m.s.fn + 2, m.s.fn + 2);
+            narr('This never ends. Every microtask queues another one, so the microtask queue is never empty and the loop never reaches the task queue (the timer) or rendering. In a real browser the page freezes: no painting, no clicks. We stop the animation here.',
+              'This never ends. Each VIP brings another VIP, so the higher-priority queue is never empty. The normal queue (the timer) never gets a turn and the page freezes: no painting, no clicking. We stop the demo here.');
+            break;
+          }
+          await gate('The stack is empty and the microtask queue is not, so it runs again. The timer in the task queue keeps waiting.',
+            'The stack is empty and the higher-priority queue is not, so it runs again. The timer keeps waiting in the normal queue.');
+          m.el.textContent = 'loop()';
+          await moveTo(m.el, stackZ); chk();
+          setLoop('running'); highlight(m.s.fn, m.s.fn + 3);
+          starveN++;
+          const d = document.createElement('div'); d.textContent = 'microtask ' + starveN; conZ.appendChild(d);
+          const c = mk('loop()', 'micro'); microZ.appendChild(c); micro.push({ s: m.s, el: c });
+          await sleep(450);
+          await pop(m.el);
+          setLoop('checking');
+          continue;
+        }
+        await gate('The stack is empty, so microtasks run first. They always go before the next task.',
+          'The stack is empty. The VIP line (microtasks) always goes first, and it must be completely empty before the normal line gets a turn.');
+        m.el.textContent = m.s.name + '()';
+        await moveTo(m.el, stackZ); chk();
+        setLoop('running'); highlight(m.s.start, m.s.start);
+        await exec(m.s.body);
+        await pop(m.el);
+        setLoop('checking');
+        continue;
+      }
+      if (paintDue) { paintDue = false; await paint(); chk(); continue; }
+      if (tasks.length) {
+        const t = tasks.shift();
+        const late = now - t.due;
+        await gate('The stack and microtask queue are empty, so the event loop takes the task at the FRONT of the task queue.' +
+          (late > 0 ? ' This one became ready at ' + t.due + ' ms but only runs at ' + now + ' ms (' + late + ' ms late): it had to wait behind everything already queued.' : ''),
+          'The stack and the VIP line are empty, so the traffic cop takes whoever is at the FRONT of the normal line.' +
+          (late > 0 ? ' This one was ready at ' + t.due + ' ms but only gets its turn at ' + now + ' ms, ' + late + ' ms late, because it had to wait its turn in line.' : ''));
+        t.el.textContent = t.s.name + '()';
+        await moveTo(t.el, stackZ); chk();
+        setLoop('running'); highlight(t.s.hl !== undefined ? t.s.hl : t.s.start, t.s.hl !== undefined ? t.s.hl : t.s.start);
+        await exec(t.s.body, { n: t.n });
+        await pop(t.el);
+        paintDue = !!scn.showPaint;
+        setLoop('checking');
+        continue;
+      }
+      if (timers.length || events.length) {
+        const nextAt = Math.min.apply(null, timers.map(t => t.fireAt).concat(events.map(e => e.fireAt)));
+        setLoop('waiting');
+        narr('Nothing to run right now. The loop waits for the next timer. (Timer durations are sped up here.)',
+          'Nothing to do right now, so the traffic cop waits for the next timer to finish. (We sped the timers up so you do not have to wait.)');
+        await advance(nextAt);
+        setLoop('checking');
+        continue;
+      }
+      break;
+    }
+    if (frozen) return;
+    if (scn.quiz) {
+      setLoop('idle');
+      narr('Answer: 1, 4, 3, 2. Why: 1 and 4 are plain instructions, so they run straight away. The timer\'s 2 waits in the normal queue. The promise\'s 3 jumps into the higher-priority queue, so it runs before 2, even though the timer is 0 ms.',
+        'Answer: 1, 4, 3, 2. The 1 and 4 run straight away. The timer\'s 2 waits in the normal line. The promise\'s 3 jumps into the VIP line, so it goes before 2, even though the timer is 0 ms.');
+      return;
+    }
+    setLoop('idle');
+    narr('All queues are empty. The loop idles until something new arrives: a click, a network response, another timer.',
+      'Everything is done and both lines are empty. The traffic cop just waits until something new shows up, like a click or a network reply.');
+  } catch (e) {
+    if (e !== CANCEL) throw e;
+  } finally {
+    if (my === runId) { running = false; $('#run').textContent = 'Run again'; setNext(false); }
+  }
+}
+
+/* ---------- wiring ---------- */
+Object.keys(SCN).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = SCN[k].title; $('#scn').appendChild(o); });
+$('#scn').onchange = () => { runId++; nextClick(); running = false; $('#run').textContent = 'Run'; resetBoard(); renderCode(); narr('Press Run to start.'); };
+$('#run').onclick = play;
+$('#next').onclick = nextClick;$('#auto').onchange = () => { if ($('#auto').checked) nextClick(); };
+$('#spd').onchange = () => { speed = parseFloat($('#spd').value); };
+$('#eli').onchange = () => {
+  document.body.classList.toggle('eli16', $('#eli').checked);
+  if (lastNarr[0]) $('#narr').textContent = ($('#eli').checked && lastNarr[1]) ? lastNarr[1] : lastNarr[0];
+};
+document.addEventListener('keydown', e => {
+  if ((e.key === 'ArrowRight' || e.key === ' ') && !/SELECT|INPUT|BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); nextClick(); }
+});
+renderCode();
+</script>
+</body>
+</html>
