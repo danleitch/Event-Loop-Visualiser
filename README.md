@@ -8,6 +8,7 @@ No install, no build step, no dependencies. Download the files and open the HTML
 
 | File | What it is |
 | --- | --- |
+| `index.html` | A simple landing page linking to both demos (this is what GitHub Pages serves). |
 | `event-loop-visualiser.html` | The main animated walkthrough: code panel, console, call stack, Web APIs, microtask queue, task queue and the event loop. |
 | `event-loop-live.html` | Runs real code in your browser and shows what actually happens, including a frame-time graph that shows jank when the main thread is blocked. |
 | `speaking-notes.md` | Talk notes: how code gets from your editor to the page, the engine basics, and the event loop explained. |
